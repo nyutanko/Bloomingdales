@@ -1,106 +1,234 @@
+// Modules
 const puppeteer = require('puppeteer')
-//const converter = require('json-2-csv')
-const fs = require('fs')
-//const moment = require('moment')
 
+// Global variables
+const productIds = ['4009996', '1813343']
+const mainPageLink = 'https://www.bloomingdales.com/'
+let categoryArray = []
 
-const link = 'https://www.bloomingdales.com/shop/womens-apparel?id=2910&cm_sp=NAVIGATION_INTL-_-TOP_NAV-_-WOMEN-n-n';
+// Core function
+async function main () {
+    // Start browser and create a new page
+    let browser, page
+    try {
+        browser = await startBrowser('', true)
+        page = await createPage(browser)
+    } catch (error) {
+        console.log('Failed to start browser process. ', error.message)
+        process.exit()
+    }
 
-(async () => {
-    //const dateFilename = 'clothes_' + moment().format('DD-MM-YYYY') + '_' + moment().format('hh-mm-ss') + '.csv'
-   // const filename = dateFilename.replace(/[:]/g, '-')
-
-    let counter = 0
-
+    const categoryLinks = []
+    if (page) {
+        console.log('='.repeat(5), 'Collecting Category links', '='.repeat(5))
+        let linksData
         try {
-            const browser = await puppeteer.launch({ headless: false })
-            const page = await browser.newPage()
-            await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/61.0.3163.100 Safari/537.36')
-            await page.addScriptTag({ url: 'https://code.jquery.com/jquery-3.2.1.min.js' })
-
-            //await page.goto(link)
-            await page.goto('https://www.bloomingdales.com/shop/womens-apparel/activewear-workout-clothes?id=11817&edge=hybrid&cm_sp=LEFTNAV_INT-_-women-_-Header-Active_%26_Workout')
-            console.log('Going to ACTIVEWEAR & WORKOUT')
-            //await page.waitForSelector('#closeButton')
-            //await page.click('#closeButton')
-
-            console.log('Page: ' + (counter + 1))
-
-            //await page.waitForSelector('p.page-item.d-flex.next')
-/*
-            // function to get a number of the last page
-
-            const lastPage = await page.evaluate(async () => {
-                let lastPageNumber = 0
-
-                try {
-                    lastPageNumber = document.querySelector('div.col-12.grid-footer > nav > div > ul > li:nth-child(6) > a').innerText
-                } catch (e) {
-                    console.log(e)
-                }
-                return lastPageNumber
-            })
-
-
- */
-            // parsing data for every page
-/*
-            while (counter !== lastPage) {
-                // function to get pid for every item
-*/
-
-            const res = []
-
-                const ids = await page.evaluate(async () => {
-                    const page_1 = []
-
-                    try {
-                        const lis = document.querySelectorAll('li.small-6.medium-4.large-4.cell')
-                        lis.forEach(li => {
-                            const obj = {
-                                pid: li.querySelector('div.productThumbnail').id
-                            }
-                            page_1.push(obj)
-                        })
-                    } catch (e) {
-                        console.log(e)
-                    }
-                    return page_1
-                })
-
-                console.log(ids)
-
-                // get request for every item
-
-               // for (let i = 0; i < ids.length; i++) {
-
-            //const linkProd = 'https://www.bloomingdales.com/xapi/digital/v1/product/' + ids[0].pid + '?clientId=PROS&_regionCode=UA&currencyCode=UAH&_shoppingMode=SITE&size=small&_customerState=GUEST'
-
-                    const doc = await page.evaluate(() => {
-                        const data_1 = $.get({
-                            url: 'https://www.bloomingdales.com/xapi/digital/v1/product/4064835?clientId=PROS&_regionCode=UA&currencyCode=UAH&_shoppingMode=SITE&size=small&_customerState=GUEST',
-                            contentType: 'application/json',
-                            success: function (succeed, SuccessTextStatus, jqXHR) {
-                                console.log({succeed, SuccessTextStatus, jqXHR})
-                            },
-                            error: function (jqXHR, status) {
-                                console.log({jqXHR, status})
-                            }
-                        })
-                        return data_1
-                    })
-
-            console.log(doc)
-            /*
-                }
-
-
-                await res.flat()
-            }
-            await browser.close()
-
- */
-        } catch (e) {
-            console.log(e)
+            // Get item details
+            linksData = await getCategoryLinks(page)
+        } catch (error) {
+            console.log(`Error: ${error.message}`)
         }
-})()
+        // If details is ok -> push to the details array
+        if (linksData) {
+            const categoryGroup = linksData.menu[0].children[0].group[0].children[0].group
+            for (let i = 0; i < categoryGroup.length; i++) {
+                const obj = {
+                    categoryId: categoryGroup[i].id,
+                    categoryText: categoryGroup[i].text,
+                    categoryUrl: categoryGroup[i].url
+                }
+                await categoryLinks.push(obj)
+            }
+            console.log('Data links received')
+        }
+        //console.log(`${mainPageLink}${categoryLinks[0].categoryUrl}`)
+        console.log('='.repeat(30))
+    }
+
+    if (page) await page.close()
+    if (browser) await browser.close()
+
+    async function makingLinks(link, id){
+        let newLink = []
+        const pid = id
+        for(let i = 0; i<link.length; i++){
+            if(link[i] !== '?'){
+                newLink[i] = link[i]
+            } else {
+                i = link.length
+            }
+        }
+
+        const newText = newLink.join('')
+
+        for(let i = 2; i < 14; i++) {
+            let catLink = mainPageLink + newText + '/Pageindex/' + i + '?id=' + pid
+            await categoryArray.push(catLink)
+        }
+    }
+
+    for(let i = 0; i < categoryLinks.length; i++){
+        categoryArray = categoryArray.flat()
+        await categoryArray.push(`${mainPageLink}${categoryLinks[i].categoryUrl}`)
+        await makingLinks(categoryLinks[i].categoryUrl, categoryLinks[i].categoryId)
+    }
+
+    categoryArray = categoryArray.flat()
+
+    console.log(categoryArray.length)
+
+    browser = await startBrowser('', true)
+    page = await createPage(browser)
+
+    let pidArray = []
+    if (page) {
+        console.log('='.repeat(5), 'Collecting Product ids', '='.repeat(5))
+        let ids
+        try {
+            ids = await getIds(page, `${mainPageLink}${categoryLinks[0].categoryUrl}`)
+        } catch (error) {
+            console.log(`Error: ${error.message}`)
+        }
+        if (ids) {
+            //console.log(ids)
+            await pidArray.push(ids)
+            pidArray = pidArray.flat()
+            //console.log(pidArray)
+        }
+    }
+
+    if (page) await page.close()
+    if (browser) await browser.close()
+    browser = await startBrowser('', true)
+    page = await createPage(browser)
+
+    // Start collecting details
+    const detailsArray = []
+    if (page) {
+        console.log('='.repeat(5), 'Collecting details', '='.repeat(5))
+        for (const pid of pidArray) {
+            console.log(`[${pid}] Get details..`)
+            let details
+            try {
+                // Get item details
+                details = await getProductDetails(page, pid)
+            } catch (error) {
+                console.log(`[${pid}] Error: ${error.message}`)
+            }
+            // If details is ok -> push to the details array
+            if (details) {
+                console.log(`[${pid}] Details received`)
+                detailsArray.push(details)
+            }
+            console.log('='.repeat(30))
+        }
+    }
+    // Show details
+    console.log(detailsArray)
+    // Close everything and exit
+    if (page) await page.close()
+    if (browser) await browser.close()
+}
+main()
+
+async function getProductDetails (page, pid) {
+    // Get details
+    await page.goto(`https://www.bloomingdales.com/xapi/digital/v1/product/${pid}?clientId=PROS&_regionCode=US&currencyCode=USD&_shoppingMode=SITE&size=small&_customerState=GUEST`, {
+        waitUntil: 'networkidle0',
+        timeout: 30000
+    })
+    // Parse details from page
+    const details = await page.evaluate(() => document.body.innerText)
+    if (details) return JSON.parse(details)
+}
+
+async function getCategoryLinks (page) {
+    // Get Category links
+    await page.goto('https://www.bloomingdales.com/xapi/navigate/v1/header?bypass_redirect=yes&viewType=Responsive&currencyCode=UAH&_regionCode=UA&_navigationType=BROWSE&_shoppingMode=SITE', {
+        waitUntil: 'networkidle0',
+        timeout: 30000
+    })
+    // Parse details from page
+    const links = await page.evaluate(() => document.body.innerText)
+    if (links) return JSON.parse(links)
+}
+
+async function getIds(page, link){
+    const idArray = []
+
+    await page.goto(link, {
+        waitUntil: 'networkidle0',
+        timeout: 30000
+    })
+
+    // function to get pid for every item id
+
+    const doc = await page.evaluate(() => {
+        const page_1 = []
+
+        const lis = document.querySelectorAll('li.small-6.medium-4.large-4.cell')
+        lis.forEach(li => {
+            const obj = {
+                pid: li.querySelector('div.productThumbnail').id
+            }
+            page_1.push(obj)
+        })
+        return page_1
+    })
+
+    if (doc){
+        for(let i = 0;  i < doc.length; i++){
+            idArray.push(doc[i].pid)
+        }
+        return idArray
+    }
+}
+
+// Help functions
+async function startBrowser (proxy, headless) {
+    // Prepare browser args
+    const browserArgs = {
+        headless: headless,
+        args: [
+            '--no-sandbox',
+            '--lang=en-US,en',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-accelerated-2d-canvas',
+            '--disable-gpu',
+            '--window-size=1280x900'
+        ]
+    }
+    if (proxy) {
+        browserArgs.args.push('--proxy-server=' + proxy)
+    }
+    // Launch browser
+    return await puppeteer.launch(browserArgs)
+}
+
+async function createPage (browser) {
+    const page = await browser.newPage()
+    // Set additional options for browser page
+    await page.setExtraHTTPHeaders({ 'Accept-Language': 'en-US' })
+    await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:91.0) Gecko/20100101 Firefox/91.0')
+    await page.setViewport({ width: 1280, height: 900, deviceScaleFactor: 1 })
+    // Set default timeouts
+    page.setDefaultNavigationTimeout(30000)
+    page.setDefaultTimeout(30000)
+    // Shot logs from browser page
+    page.on('console', msg => {
+        if (msg.type() === 'log') {
+            console.log('Browser console: ', msg.text())
+        }
+    })
+    return page
+}
+
+// Freeze the thread for [N] milliseconds
+async function sleep (milliseconds = 1) {
+    return new Promise((resolve, reject) => {
+        setTimeout(() => {
+            resolve()
+        }, milliseconds)
+    })
+}
