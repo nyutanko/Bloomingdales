@@ -9,6 +9,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "csv-parser": "^3.0.0",
     "json-2-csv": "^3.14.4",
     "moment": "^2.29.1",
     "puppeteer": "^10.2.0"
