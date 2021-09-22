@@ -83,7 +83,8 @@ async function main () {
               console.log('Get details availability..')
               try {
                 // Get item availability
-                avail = await getProductAvailability(page, mainPageLink_1 + detail.product[0].identifier.productUrl)
+                let prodId = parseInt(detail.product[0].id)
+                avail = await getProductAvailability(page, mainPageLink_1 + detail.product[0].identifier.productUrl, prodId)
               } catch (error) {
                 console.log(`Error: ${error.message}`)
               }
@@ -102,23 +103,26 @@ async function main () {
           const resultsDetails = []
           for (let i = 0; i < detailsArray.length; i++) {
             const object = {
-              pid: detailsArray[i].product[0].id,
-              item_name: detailsArray[i].product[0].detail.name,
+              product_id: detailsArray[i].product[0].id,
+              product_name: detailsArray[i].product[0].detail.name,
               vendor_name: detailsArray[i].product[0].detail.brand.name,
-              product_line: detailsArray[i].product[0].detail.typeName,
-              product_topCategory: detailsArray[i].product[0].identifier.topLevelCategoryName,
+              category: detailsArray[i].product[0].detail.typeName,
+              material: detailsArray[i].product[0].detail.materialsAndCare !== undefined
+              ? detailsArray[i].product[0].detail.materialsAndCare[0]
+              : '',
+              top_category: detailsArray[i].product[0].identifier.topLevelCategoryName,
               instock_num: detailsArray[i].product[0].detail.maxQuantity,
               in_stock: stockDetailsArray[i] !== undefined
                   ? stockDetailsArray[i].available
-                  : 'No sizes',
+                  : '',
               out_of_stock: stockDetailsArray[i] !== undefined
                   ? stockDetailsArray[i].unavailable
-                  : 'No sizes',
+                  : '',
               cost_price: detailsArray[i].product[0].pricing !== undefined
                   ? detailsArray[i].product[0].pricing.price.tieredPrice[0].values[0].value
-                  : 'Check price',
-              item_url: mainPageLink_1 + detailsArray[i].product[0].identifier.productUrl,
-              url: detailsArray[i].product[0].urlTemplate.swatchSprite + 'products/' + detailsArray[i].product[0].imagery.images[0].filePath + '?$2014_BROWSE_FASHION$&fmt=webp&op_usm=0.7,1.0,0.5,0&resMode=sharp2&qlt=85,0&wid=312&hei=390'
+                  : '',
+              product_url: mainPageLink_1 + detailsArray[i].product[0].identifier.productUrl,
+              website_image_url: detailsArray[i].product[0].urlTemplate.swatchSprite + 'products/' + detailsArray[i].product[0].imagery.images[0].filePath + '?$2014_BROWSE_FASHION$&fmt=webp&op_usm=0.7,1.0,0.5,0&resMode=sharp2&qlt=85,0&wid=312&hei=390'
             }
             await resultsDetails.push(object)
           }
@@ -155,33 +159,64 @@ async function getProductDetails (page, pid) {
 }
 
 
-async function getProductAvailability (page, link) {
+async function getProductAvailability (page, link, id) {
   await page.goto(link, {
     waitUntil: 'domcontentloaded',
     timeout: 30000
   })
+  console.log(id)
   // Setup some request delay
   await sleep(150)
   // function to get pid for every item id
-  const stock = await page.evaluate(async () => {
-    const lis = document.querySelectorAll('li.size-chip-item')
+  const stock = await page.evaluate(async (id) => {
     const labelsUnav = []
     const labelsAv = []
-    lis.forEach(li => {
-      if (li.querySelector('label.size-chip-label.small-size-chip.available')) {
-        labelsAv.push(li.querySelector('label.size-chip-label.small-size-chip.available').innerText)
-      } else {
-        labelsUnav.push(li.querySelector('label.size-chip-label.small-size-chip.unavailable').innerText)
+    if(document.querySelectorAll('li.size-chip-item')) {
+      const lis = document.querySelectorAll('li.size-chip-item')
+      lis.forEach(li => {
+        if (li.querySelector('label.size-chip-label.small-size-chip.available')) {
+          labelsAv.push(li.querySelector('label.size-chip-label.small-size-chip.available').innerText)
+        }
+        if (li.querySelector('label.size-chip-label.small-size-chip.unavailable')) {
+          labelsUnav.push(li.querySelector('label.size-chip-label.small-size-chip.unavailable').innerText)
+        }
+        if (li.querySelector('label.size-chip-label.medium-size-chip.available')) {
+          labelsUnav.push(li.querySelector('label.size-chip-label.medium-size-chip.available').innerText)
+        }
+        if (li.querySelector('label.size-chip-label.medium-size-chip.unavailable')) {
+          labelsUnav.push(li.querySelector('label.size-chip-label.medium-size-chip.unavailable').innerText)
+        }
+      })
+    }
+    if(document.querySelector(`#size-dropdown-${id}`)) {
+      let sizeAv, size
+      const lengthOfSizes = document.querySelector(`#size-dropdown-${id}`).length
+      for (let i = 2; i < lengthOfSizes + 1; i++) {
+        sizeAv = document.querySelector(`#size-dropdown-${id} > option:nth-child(${i})`).textContent.replace(/[\n\r]+|[\s]{2,}/g, ' ').trim()
+
+        if (sizeAv.length > 12){
+          size = document.querySelector(`#size-dropdown-${id} > option:nth-child(${i})`).dataset.name
+          labelsUnav.push(size)
+        } else {
+          size = document.querySelector(`#size-dropdown-${id} > option:nth-child(${i})`).dataset.name
+          labelsAv.push(size)
+        }
       }
-    })
-    const obj = {
-      available: labelsAv.join(','),
-      unavailable: labelsUnav.join(',')
     }
 
-    return obj
-  })
+    const obj = {
+      available: labelsAv.length !== 0
+          ? labelsAv.join(',')
+          : '',
+      unavailable: labelsUnav.length !== 0
+      ? labelsUnav.join(',')
+          : ''
 
+    }
+    return obj
+  }, id)
+
+  console.log(stock)
   if (stock) {
     return JSON.parse(JSON.stringify(stock))
   }
@@ -192,7 +227,7 @@ async function getProductAvailability (page, link) {
 async function startBrowser (proxy, headless) {
   // Prepare browser args
   const browserArgs = {
-    headless: false,
+    headless: headless,
     args: [
       '--no-sandbox',
       '--lang=en-US,en',
